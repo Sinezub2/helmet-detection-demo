@@ -1,4 +1,3 @@
-import contextlib
 import threading
 import time
 from datetime import datetime
@@ -6,37 +5,25 @@ from pathlib import Path
 from typing import Dict, List, Tuple
 
 import cv2
-import torch
 from flask import Flask, render_template, request, send_from_directory, url_for
-from torch.nn import Sequential
 from ultralytics import YOLO
 
 # Paths used across the app
 BASE_DIR = Path(__file__).resolve().parent
 UPLOAD_DIR = BASE_DIR / "static" / "uploads"
 RESULT_DIR = BASE_DIR / "static" / "results"
-MODEL_PATH = BASE_DIR / "models" / "best.pt"
 CLEANUP_INTERVAL_SECONDS = 600  # 10 minutes
+import torch
+from ultralytics.nn.tasks import DetectionModel
 
+# allow YOLO checkpoint class
+torch.serialization.add_safe_globals([DetectionModel])
+
+from ultralytics import YOLO
+MODEL_PATH = "models/best.pt"
+model = YOLO(MODEL_PATH)
 
 app = Flask(__name__)
-
-
-def _safe_torch_load_context() -> contextlib.AbstractContextManager:
-    """Return a context manager that allowlists YOLO layers for PyTorch safe loading."""
-
-    safe_globals_fn = getattr(torch.serialization, "safe_globals", None)
-    if callable(safe_globals_fn):
-        try:
-            return safe_globals_fn([Sequential])
-        except TypeError:
-            # Older previews of the API expected a keyword-only argument.
-            return safe_globals_fn(allowlist=[Sequential])  # type: ignore[arg-type]
-
-    add_safe_globals = getattr(torch.serialization, "add_safe_globals", None)
-    if callable(add_safe_globals):
-        add_safe_globals([Sequential])
-    return contextlib.nullcontext()
 
 
 def load_model(model_path: Path) -> YOLO:
@@ -46,8 +33,7 @@ def load_model(model_path: Path) -> YOLO:
             f"Model weights not found at {model_path}. Please place best.pt in the models directory."
         )
     # YOLO automatically detects device (CPU/GPU). No extra logic needed here.
-    with _safe_torch_load_context():
-        return YOLO(str(model_path))
+    return YOLO(str(model_path))
 
 
 model = load_model(MODEL_PATH)
