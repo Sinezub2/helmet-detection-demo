@@ -53,7 +53,7 @@ flask run
 
 The app will start on `http://127.0.0.1:5000/`.
 
-Alternatively, run directly with Python to enable the built-in development server (this works the same on every OS):
+Alternatively, run directly with Python to enable the built-in development server:
 
 ```bash
 python app.py

@@ -1,4 +1,3 @@
-import contextlib
 import threading
 import time
 from datetime import datetime
@@ -6,7 +5,6 @@ from pathlib import Path
 from typing import Dict, List, Tuple
 
 import cv2
-import torch
 from flask import Flask, render_template, request, send_from_directory, url_for
 from ultralytics import YOLO
 
@@ -48,8 +46,7 @@ def load_model(model_path: Path) -> YOLO:
             f"Model weights not found at {model_path}. Please place best.pt in the models directory."
         )
     # YOLO automatically detects device (CPU/GPU). No extra logic needed here.
-    with _safe_torch_load_context():
-        return YOLO(str(model_path))
+    return YOLO(str(model_path))
 
 
 model = load_model(MODEL_PATH)
