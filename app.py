@@ -87,25 +87,29 @@ def iou(box_a: Tuple[int, int, int, int], box_b: Tuple[int, int, int, int]) -> f
 
 
 def run_inference(image_path: Path) -> Path:
-    """Run YOLOv8 inference and annotate helmet usage."""
-    image = cv2.imread(str(image_path))
-    results = model(str(image_path))
+    """Run YOLOv8 inference and annotate helmet usage (aligned and scaled correctly)."""
+    # Run YOLO inference
+    results = model.predict(source=str(image_path), conf=0.25, verbose=False)
     result = results[0]
-    names: Dict[int, str] = result.names
 
+    # Get YOLO-rendered image (boxes drawn at correct scale)
+    rendered = result.plot()  # Numpy image with YOLO boxes
+
+    # Prepare separate lists for helmet and person detections
+    names: Dict[int, str] = result.names
     people: List[Tuple[int, int, int, int]] = []
     helmets: List[Tuple[int, int, int, int]] = []
 
     for box in result.boxes:
         cls = int(box.cls)
         name = names.get(cls, "")
-        x1, y1, x2, y2 = map(int, box.xyxy[0])
+        x1, y1, x2, y2 = map(int, box.xyxy[0].tolist())
         if "person" in name.lower():
             people.append((x1, y1, x2, y2))
         elif "helmet" in name.lower():
             helmets.append((x1, y1, x2, y2))
 
-    # Determine which people have helmets
+    # Compute which persons have helmets
     helmet_matches = [False] * len(people)
     for i, person_box in enumerate(people):
         for helmet_box in helmets:
@@ -113,26 +117,20 @@ def run_inference(image_path: Path) -> Path:
                 helmet_matches[i] = True
                 break
 
-    # Draw boxes
-    for helmet_box in helmets:
-        x1, y1, x2, y2 = helmet_box
-        cv2.rectangle(image, (x1, y1), (x2, y2), (0, 200, 0), 2)
-        cv2.putText(image, "HELMET", (x1, max(20, y1 - 10)),
-                    cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 200, 0), 2)
-
+    # Draw final overlays
     for person_box, has_helmet in zip(people, helmet_matches):
         x1, y1, x2, y2 = person_box
         if has_helmet:
-            color, label = (0, 180, 255), "HELMET ON"
+            color, label = (0, 200, 0), "HELMET ON"
         else:
             color, label = (0, 0, 255), "NO HELMET"
-        cv2.rectangle(image, (x1, y1), (x2, y2), color, 2)
-        cv2.putText(image, label, (x1, max(20, y1 - 10)),
-                    cv2.FONT_HERSHEY_SIMPLEX, 0.7, color, 2)
+        cv2.rectangle(rendered, (x1, y1), (x2, y2), color, 2)
+        cv2.putText(rendered, label, (x1, max(25, y1 - 10)), cv2.FONT_HERSHEY_SIMPLEX, 0.7, color, 2)
 
+    # Save result
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S%f")
     output_path = RESULT_DIR / f"result_{timestamp}.jpg"
-    cv2.imwrite(str(output_path), image)
+    cv2.imwrite(str(output_path), rendered)
     return output_path
 
 
