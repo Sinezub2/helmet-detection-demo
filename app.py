@@ -5,18 +5,23 @@ from pathlib import Path
 from typing import Dict, List, Tuple
 
 import cv2
-import torch
 from flask import Flask, render_template, request, send_from_directory, url_for
-from torch.nn import Sequential
 from ultralytics import YOLO
 
 # Paths used across the app
 BASE_DIR = Path(__file__).resolve().parent
 UPLOAD_DIR = BASE_DIR / "static" / "uploads"
 RESULT_DIR = BASE_DIR / "static" / "results"
-MODEL_PATH = BASE_DIR / "models" / "best.pt"
 CLEANUP_INTERVAL_SECONDS = 600  # 10 minutes
+import torch
+from ultralytics.nn.tasks import DetectionModel
 
+# allow YOLO checkpoint class
+torch.serialization.add_safe_globals([DetectionModel])
+
+from ultralytics import YOLO
+MODEL_PATH = "models/best.pt"
+model = YOLO(MODEL_PATH)
 
 app = Flask(__name__)
 
@@ -27,10 +32,6 @@ def load_model(model_path: Path) -> YOLO:
         raise FileNotFoundError(
             f"Model weights not found at {model_path}. Please place best.pt in the models directory."
         )
-    # Allowlist Sequential so PyTorch 2.6+ can deserialize YOLO checkpoints safely.
-    add_safe_globals = getattr(torch.serialization, "add_safe_globals", None)
-    if callable(add_safe_globals):
-        add_safe_globals([Sequential])
     # YOLO automatically detects device (CPU/GPU). No extra logic needed here.
     return YOLO(str(model_path))
 
