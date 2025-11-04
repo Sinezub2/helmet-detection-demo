@@ -2,11 +2,13 @@ import threading
 import time
 from datetime import datetime
 from pathlib import Path
-from typing import Dict, List, Tuple
+from typing import Dict, List, Tuple, Iterator   # ✅ add Iterator here
 import contextlib
 import cv2
 from flask import Flask, render_template, request, send_from_directory, url_for
 from ultralytics import YOLO
+import torch   # ✅ also ensure this line is present for torch.load override
+
 
 # Paths used across the app
 BASE_DIR = Path(__file__).resolve().parent
@@ -20,7 +22,8 @@ app = Flask(__name__)
 
 
 @contextlib.contextmanager
-def _safe_torch_load_context() -> contextlib.Iterator[None]:
+def _safe_torch_load_context() -> Iterator[None]:
+
     """Temporarily allow YOLO checkpoints that require full pickle deserialization."""
 
     original_torch_load = torch.load
