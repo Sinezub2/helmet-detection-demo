@@ -38,7 +38,16 @@ helmet-detection-demo/
 ## Running the app
 
 ```bash
-export FLASK_APP=app.py  # Windows PowerShell: $env:FLASK_APP = "app.py"
+# macOS/Linux (bash/zsh)
+export FLASK_APP=app.py
+flask run
+
+# Windows PowerShell
+$env:FLASK_APP = "app.py"
+flask run
+
+# Windows Command Prompt
+set FLASK_APP=app.py
 flask run
 ```
 
@@ -63,3 +72,4 @@ Uploads and results are automatically cleaned every 10 minutes by a background t
 - The bundled UI mirrors the style of [ElijahAnalysis/indrive](https://github.com/ElijahAnalysis/indrive) for a clean single-page experience.
 - Ensure your `best.pt` was trained with class names containing "person" and "helmet" so the annotation logic can differentiate between them.
 - If you are running on CPU, inference may take a few seconds depending on the image size.
+- When running with PyTorch 2.6 or newer, the app temporarily disables the new `weights_only` safety default while loading trusted YOLO checkpoints so the model initializes without manual steps.

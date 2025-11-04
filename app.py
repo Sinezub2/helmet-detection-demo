@@ -12,18 +12,31 @@ from ultralytics import YOLO
 BASE_DIR = Path(__file__).resolve().parent
 UPLOAD_DIR = BASE_DIR / "static" / "uploads"
 RESULT_DIR = BASE_DIR / "static" / "results"
+MODEL_PATH = BASE_DIR / "models" / "best.pt"
 CLEANUP_INTERVAL_SECONDS = 600  # 10 minutes
-import torch
-from ultralytics.nn.tasks import DetectionModel
 
-# allow YOLO checkpoint class
-torch.serialization.add_safe_globals([DetectionModel])
-
-from ultralytics import YOLO
-MODEL_PATH = "models/best.pt"
-model = YOLO(MODEL_PATH)
 
 app = Flask(__name__)
+
+
+@contextlib.contextmanager
+def _safe_torch_load_context() -> contextlib.Iterator[None]:
+    """Temporarily allow YOLO checkpoints that require full pickle deserialization."""
+
+    original_torch_load = torch.load
+
+    def patched_torch_load(*args, **kwargs):
+        # Ultralytics internally calls torch.load without specifying weights_only.
+        # Explicitly disabling the safe-only mode restores compatibility with
+        # checkpoints created before PyTorch 2.6 tightened defaults.
+        kwargs.setdefault("weights_only", False)
+        return original_torch_load(*args, **kwargs)
+
+    torch.load = patched_torch_load  # type: ignore[assignment]
+    try:
+        yield
+    finally:
+        torch.load = original_torch_load  # type: ignore[assignment]
 
 
 def load_model(model_path: Path) -> YOLO:
