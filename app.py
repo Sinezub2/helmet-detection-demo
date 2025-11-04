@@ -2,16 +2,15 @@ import threading
 import time
 from datetime import datetime
 from pathlib import Path
-from typing import Dict, List, Tuple, Iterator
+from typing import Iterator
 import contextlib
 import cv2
-from flask import Flask, render_template, request, send_from_directory, url_for
+from flask import Flask, render_template, request, send_from_directory, url_for, jsonify
 from ultralytics import YOLO
 import torch
 from ultralytics.nn.tasks import DetectionModel
 
 # === PyTorch 2.6 fix for YOLO checkpoints ============================
-# Allow the YOLOv8 DetectionModel class to be deserialized safely.
 torch.serialization.add_safe_globals([DetectionModel])
 # =====================================================================
 
@@ -24,10 +23,9 @@ CLEANUP_INTERVAL_SECONDS = 600  # 10 minutes
 
 app = Flask(__name__)
 
-# --- Context manager to ensure torch.load works with YOLO checkpoints ---
+# --- Context manager for YOLO model load ---
 @contextlib.contextmanager
 def _safe_torch_load_context() -> Iterator[None]:
-    """Temporarily disable PyTorch's safe-only load restriction for YOLO weights."""
     original_torch_load = torch.load
 
     def patched_torch_load(*args, **kwargs):
@@ -42,101 +40,55 @@ def _safe_torch_load_context() -> Iterator[None]:
 
 
 def load_model(model_path: Path) -> YOLO:
-    """Load YOLOv8 model with PyTorch 2.6 compatibility fix."""
     if not model_path.exists():
         raise FileNotFoundError(
             f"Model weights not found at {model_path}. Please place best.pt in the models directory."
         )
-
-    # Use safe context for YOLO model loading
     with _safe_torch_load_context():
-        model = YOLO(str(model_path))
-    return model
+        return YOLO(str(model_path))
 
 
-# --- Load model once at startup -------------------------------------
 model = load_model(MODEL_PATH)
 
-
-def ensure_directories() -> None:
-    """Ensure upload and result directories exist."""
+# --- Utility directories ---
+def ensure_directories():
     UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
     RESULT_DIR.mkdir(parents=True, exist_ok=True)
 
 
 ensure_directories()
 
-
-def iou(box_a: Tuple[int, int, int, int], box_b: Tuple[int, int, int, int]) -> float:
-    """Compute intersection-over-union (IoU) between two bounding boxes."""
-    xa1, ya1, xa2, ya2 = box_a
-    xb1, yb1, xb2, yb2 = box_b
-    inter_x1 = max(xa1, xb1)
-    inter_y1 = max(ya1, yb1)
-    inter_x2 = min(xa2, xb2)
-    inter_y2 = min(ya2, yb2)
-    inter_w = max(0, inter_x2 - inter_x1)
-    inter_h = max(0, inter_y2 - inter_y1)
-    inter_area = inter_w * inter_h
-    if inter_area == 0:
-        return 0.0
-    area_a = (xa2 - xa1) * (ya2 - ya1)
-    area_b = (xb2 - xb1) * (yb2 - yb1)
-    union = area_a + area_b - inter_area
-    return 0.0 if union == 0 else inter_area / union
-
-
-def run_inference(image_path: Path) -> Path:
-    """Run YOLOv8 inference and annotate helmet usage (aligned and scaled correctly)."""
-    # Run YOLO inference
+# --- Run YOLO inference and return annotated image + summary text ---
+def run_inference(image_path: Path) -> tuple[Path, dict]:
+    """Run YOLOv8 inference and return both annotated image and text results."""
     results = model.predict(source=str(image_path), conf=0.25, imgsz=640, verbose=False)
-
     result = results[0]
+    rendered = result.plot()  # image with drawn boxes
+    names = result.names
 
-    # Get YOLO-rendered image (boxes drawn at correct scale)
-    rendered = result.plot()  # Numpy image with YOLO boxes
-
-    # Prepare separate lists for helmet and person detections
-    names: Dict[int, str] = result.names
-    people: List[Tuple[int, int, int, int]] = []
-    helmets: List[Tuple[int, int, int, int]] = []
-
+    # Collect textual detection summary
+    detections = []
     for box in result.boxes:
-        cls = int(box.cls)
-        name = names.get(cls, "")
-        x1, y1, x2, y2 = map(int, box.xyxy[0].tolist())
-        if "person" in name.lower():
-            people.append((x1, y1, x2, y2))
-        elif "helmet" in name.lower():
-            helmets.append((x1, y1, x2, y2))
+        cls_id = int(box.cls)
+        cls_name = names[cls_id]
+        conf = float(box.conf)
+        detections.append({"class": cls_name, "confidence": round(conf, 2)})
 
-    # Compute which persons have helmets
-    helmet_matches = [False] * len(people)
-    for i, person_box in enumerate(people):
-        for helmet_box in helmets:
-            if iou(person_box, helmet_box) > 0.1:
-                helmet_matches[i] = True
-                break
-
-    # Draw final overlays
-    for person_box, has_helmet in zip(people, helmet_matches):
-        x1, y1, x2, y2 = person_box
-        if has_helmet:
-            color, label = (0, 200, 0), "HELMET ON"
-        else:
-            color, label = (0, 0, 255), "NO HELMET"
-        cv2.rectangle(rendered, (x1, y1), (x2, y2), color, 2)
-        cv2.putText(rendered, label, (x1, max(25, y1 - 10)), cv2.FONT_HERSHEY_SIMPLEX, 0.7, color, 2)
-
-    # Save result
+    # Save rendered image
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S%f")
     output_path = RESULT_DIR / f"result_{timestamp}.jpg"
     cv2.imwrite(str(output_path), rendered)
-    return output_path
+
+    # Count detections by class for simple summary
+    summary = {}
+    for d in detections:
+        summary[d["class"]] = summary.get(d["class"], 0) + 1
+
+    return output_path, {"detections": detections, "summary": summary}
 
 
-def cleanup_worker() -> None:
-    """Delete old files every 10 minutes."""
+# --- Background cleanup ---
+def cleanup_worker():
     while True:
         cutoff = time.time() - CLEANUP_INTERVAL_SECONDS
         for folder in (UPLOAD_DIR, RESULT_DIR):
@@ -149,14 +101,10 @@ def cleanup_worker() -> None:
         time.sleep(CLEANUP_INTERVAL_SECONDS)
 
 
-def start_cleanup_thread() -> None:
-    thread = threading.Thread(target=cleanup_worker, daemon=True)
-    thread.start()
+threading.Thread(target=cleanup_worker, daemon=True).start()
 
 
-start_cleanup_thread()
-
-
+# --- Routes ---
 @app.route("/")
 def index():
     return render_template("index.html")
@@ -167,21 +115,23 @@ def upload():
     ensure_directories()
     file = request.files.get("image")
     if not file:
-        return {"error": "No file uploaded."}, 400
+        return jsonify({"error": "No file uploaded."}), 400
 
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S%f")
     filename = f"upload_{timestamp}.jpg"
     upload_path = UPLOAD_DIR / filename
     file.save(upload_path)
 
-    result_path = run_inference(upload_path)
+    result_path, results_data = run_inference(upload_path)
+
     result_url = url_for("static", filename=f"results/{result_path.name}")
-    return {"result_url": result_url}
+    results_data["result_url"] = result_url
+
+    return jsonify(results_data)
 
 
 @app.route("/uploads/<path:filename>")
 def uploaded_file(filename):
-    """Serve uploaded files (for debugging)."""
     return send_from_directory(UPLOAD_DIR, filename)
 
 
