@@ -89,7 +89,8 @@ def iou(box_a: Tuple[int, int, int, int], box_b: Tuple[int, int, int, int]) -> f
 def run_inference(image_path: Path) -> Path:
     """Run YOLOv8 inference and annotate helmet usage (aligned and scaled correctly)."""
     # Run YOLO inference
-    results = model.predict(source=str(image_path), conf=0.25, verbose=False)
+    results = model.predict(source=str(image_path), conf=0.25, imgsz=640, verbose=False)
+
     result = results[0]
 
     # Get YOLO-rendered image (boxes drawn at correct scale)
