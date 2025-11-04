@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Helmet Detection Demo</title>
+    <style>
+      body {
+        font-family: Arial, sans-serif;
+        background: #f2f4f8;
+        margin: 0;
+        padding: 0;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        min-height: 100vh;
+      }
+
+      .container {
+        width: 90%;
+        max-width: 900px;
+        background: #fff;
+        border-radius: 16px;
+        padding: 40px;
+        box-shadow: 0 12px 32px rgba(15, 30, 60, 0.08);
+      }
+
+      h1 {
+        margin-top: 0;
+        text-align: center;
+        color: #1d2d50;
+      }
+
+      p.description {
+        text-align: center;
+        color: #4a4a4a;
+        margin-bottom: 30px;
+      }
+
+      form {
+        display: flex;
+        flex-direction: column;
+        gap: 16px;
+        align-items: center;
+      }
+
+      input[type="file"] {
+        padding: 12px;
+        border: 2px dashed #8aaae5;
+        border-radius: 10px;
+        background: #f8fbff;
+        width: 100%;
+        max-width: 400px;
+      }
+
+      button {
+        padding: 12px 30px;
+        border: none;
+        border-radius: 999px;
+        background: linear-gradient(135deg, #5170ff, #4db6ff);
+        color: white;
+        font-size: 16px;
+        cursor: pointer;
+        transition: transform 0.2s ease, box-shadow 0.2s ease;
+      }
+
+      button:hover {
+        transform: translateY(-1px);
+        box-shadow: 0 8px 20px rgba(81, 112, 255, 0.35);
+      }
+
+      .preview {
+        margin-top: 30px;
+        display: grid;
+        gap: 20px;
+        grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+      }
+
+      .preview img {
+        width: 100%;
+        border-radius: 12px;
+        box-shadow: 0 6px 18px rgba(0, 0, 0, 0.1);
+      }
+
+      .status {
+        text-align: center;
+        color: #1d2d50;
+        margin-top: 20px;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="container">
+      <h1>Helmet Detection Demo</h1>
+      <p class="description">
+        Upload an image and the model will highlight people with and without helmets in real time.
+      </p>
+      <form id="upload-form">
+        <input type="file" id="image" name="image" accept="image/*" required />
+        <button type="submit">Run Detection</button>
+      </form>
+      <div id="status" class="status"></div>
+      <div class="preview" id="preview"></div>
+    </div>
+
+    <script>
+      const form = document.getElementById("upload-form");
+      const statusEl = document.getElementById("status");
+      const previewEl = document.getElementById("preview");
+
+      form.addEventListener("submit", async (event) => {
+        event.preventDefault();
+        statusEl.textContent = "Uploading and running detection...";
+
+        const formData = new FormData();
+        const fileField = document.getElementById("image");
+        if (!fileField.files.length) {
+          statusEl.textContent = "Please choose an image first.";
+          return;
+        }
+        formData.append("image", fileField.files[0]);
+
+        try {
+          const response = await fetch("/upload", {
+            method: "POST",
+            body: formData,
+          });
+
+          if (!response.ok) {
+            const data = await response.json();
+            statusEl.textContent = data.error || "An error occurred.";
+            return;
+          }
+
+          const data = await response.json();
+          statusEl.textContent = "Detection complete!";
+
+          const resultImg = document.createElement("img");
+          resultImg.src = data.result_url + "?t=" + Date.now();
+          resultImg.alt = "Detection result";
+
+          previewEl.innerHTML = "";
+          previewEl.appendChild(resultImg);
+        } catch (error) {
+          console.error(error);
+          statusEl.textContent = "Failed to contact the server.";
+        }
+      });
+    </script>
+  </body>
+</html>
