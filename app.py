@@ -12,9 +12,16 @@ from ultralytics import YOLO
 BASE_DIR = Path(__file__).resolve().parent
 UPLOAD_DIR = BASE_DIR / "static" / "uploads"
 RESULT_DIR = BASE_DIR / "static" / "results"
-MODEL_PATH = BASE_DIR / "models" / "best.pt"
 CLEANUP_INTERVAL_SECONDS = 600  # 10 minutes
+import torch
+from ultralytics.nn.tasks import DetectionModel
 
+# allow YOLO checkpoint class
+torch.serialization.add_safe_globals([DetectionModel])
+
+from ultralytics import YOLO
+MODEL_PATH = "models/best.pt"
+model = YOLO(MODEL_PATH)
 
 app = Flask(__name__)
 
